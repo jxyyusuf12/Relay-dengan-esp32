@@ -1,0 +1,90 @@
+        
+#include <WiFi.h>
+#include <WiFiClient.h>
+#include <HTTPClient.h>
+#include <DHT.h>
+#define DHTPIN 4
+#define DHTTYPE DHT22
+#define RELAY_PIN 14
+DHT dht(DHTPIN, DHTTYPE);
+//konfigurasi wifi
+const char* ssid = "Galaxy";
+const char* pass = "12345678";
+const char* server ="http://192.168.52.237";
+int suhu;
+int kelembapan;
+//variabel kirim data
+long zero = 0;
+long jeda = 5000; //kirim data waktu
+
+void setup() {
+  // Inisialisasi pin
+ dht.begin();
+  pinMode(RELAY_PIN, OUTPUT);
+  digitalWrite(RELAY_PIN, LOW);    
+
+  // Inisialisasi serial monitor
+  Serial.begin(115200);
+  Serial.println("Program mulai...");
+
+  // WiFi koneksi
+  WiFi.begin(ssid, pass);
+  while (WiFi.status() != WL_CONNECTED){
+    delay(500);
+    Serial.print("-");
+  }
+  Serial.println("Terkoneksi");
+}
+
+
+void loop() {
+  // Membaca data dari sensor DHT
+  kelembapan = dht.readHumidity();
+  suhu = dht.readTemperature();
+
+  if (isnan(kelembapan) || isnan(suhu)) {
+    Serial.println("Gagal membaca data dari sensor DHT!");
+    delay(2000);
+    return;
+  }
+
+  Serial.print("suhu: ");
+  Serial.print(suhu);
+  Serial.print(" °C, kelembapan: ");
+  Serial.print(kelembapan);
+  Serial.println(" %");
+
+  // Kontrol kelembapan dengan histeresis
+  static bool relayOn = false;
+  if (kelembapan < 75.0 && !relayOn) {
+    digitalWrite(RELAY_PIN, HIGH);
+    relayOn = true;
+    Serial.println("Relay ON (kelembapan rendah)");
+  } else if (kelembapan > 85.0 && relayOn) {
+    digitalWrite(RELAY_PIN, LOW);
+    relayOn = false;
+    Serial.println("Relay OFF (kelembapan tinggi)");
+  }
+  
+  delay(100); // Delay pembacaan sensor
+
+  // Kirim data ke server secara berkala!!!!!!
+  if (millis() - zero > jeda) {
+    //bangun url request
+    String URL = String("") + server + "/dht22_project/input.php?suhu=" + suhu + "&kelembapan=" + kelembapan ;
+    Serial.println(URL);
+    //kirim data jika terhubung wifi
+    if (WiFi.status() == WL_CONNECTED){
+      HTTPClient http;
+      http.begin(URL);
+      int httpCode = http.GET();
+      //cek respon server
+      if (httpCode > 0) {
+        String payload = http.getString();
+        Serial.println(payload);
+      }
+      http.end();
+    }
+    zero = millis(); // Reset timer
+  }
+}
